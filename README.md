@@ -5,19 +5,52 @@ A complete **Automatic Number Plate Recognition (ANPR)** system specifically des
 ## 🌟 Features
 
 - ✅ **Indian License Plate Detection** using YOLOv8
-- ✅ **Text Recognition** with EasyOCR 
+- ✅ **Text Recognition** with EasyOCR
 - ✅ **OpenCV Fallback** detection method
 - ✅ **Image and Video Processing**
 - ✅ **Indian Plate Format Validation**
-- ✅ **Custom Model Training** capabilities
+- ✅ **Database Storage** with SQLite
+- ✅ **REST API** with FastAPI
+- ✅ **Web Interface** with Streamlit
 - ✅ **Batch Processing** support
-- ✅ **GPU Acceleration** support
+- ✅ **GPU Acceleration** support (CPU/MPS/CUDA)
 
 ## 📋 Supported Formats
 
 - **Old Format**: XX ## XX #### (e.g., DL 12 AB 1234)
 - **New Format**: XX ## XX #### (e.g., MH 01 BC 5678)
 - **Commercial**: XX ## X #### (e.g., KA 03 C 9876)
+
+## 🏗️ Project Structure
+
+```
+project_root/
+├── src/
+│   ├── core/
+│   │   ├── lpr_system.py      # Main ALPR system
+│   │   ├── detector.py        # Detection logic
+│   │   ├── ocr.py            # OCR logic
+│   │   ├── validator.py       # Plate validation
+│   │   ├── preprocessor.py    # Image preprocessing
+│   ├── utils/
+│   │   ├── logger.py          # Logging utilities
+│   │   ├── config.py          # Configuration management
+│   │   ├── database.py        # Database operations
+├── models/                    # YOLO models
+├── data/
+│   ├── images/                # Sample images
+│   ├── results/               # Processing results
+├── app/
+│   ├── streamlit_app.py       # Web interface
+│   ├── api.py                 # REST API
+├── scripts/
+│   ├── demo.py                # Demo script
+│   ├── batch_run.py           # Batch processing
+│   ├── video_processor.py     # Video processing
+├── config/                    # Configuration files
+├── requirements.txt
+└── README.md
+```
 
 ## 🛠️ Installation
 
@@ -27,25 +60,71 @@ git clone <repository-url>
 cd indian-license-plate-recognition
 ```
 
-### 2. Run Setup Script
+### 2. Install Dependencies
 ```bash
-python setup.py
+pip install -r requirements.txt
 ```
 
-This will:
-- Install all required packages
-- Download YOLOv8 models
-- Create directory structure  
-- Download sample images
-- Create configuration files
+### 3. Download Models
+The system will automatically download required models on first run, or you can manually download:
 
-### 3. Manual Installation (Alternative)
 ```bash
-# Install requirements
-pip install -r requirements.txt
+# YOLOv8 license plate model
+wget https://github.com/ultralytics/yolov8/releases/download/v8.0.0/license_plate_yolov8.pt -P models/
 
-# Create directories
-mkdir -p models data/sample_images results datasets
+# General YOLOv8 models (optional)
+wget https://github.com/ultralytics/yolov8/releases/download/v8.0.0/yolov8n.pt -P models/
+```
+
+## 🚀 Usage
+
+### Command Line Interface
+
+```python
+from src.core.lpr_system import ImprovedIndianLPRSystem
+
+# Initialize system
+lpr = ImprovedIndianLPRSystem(device='cpu')
+
+# Process single image
+result = lpr.process_image('path/to/image.jpg')
+print(result)
+```
+
+### Web Interface
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+### REST API
+
+```bash
+# Start API server
+python app/api.py
+
+# API will be available at http://localhost:8000
+# POST /api/v1/recognize - Upload image for recognition
+# GET /api/v1/history - Get plate detection history
+# GET /api/v1/statistics - Get system statistics
+```
+
+### Batch Processing
+
+```python
+from scripts.batch_run import BatchProcessor
+
+processor = BatchProcessor()
+processor.process_directory('data/images/', 'data/results/')
+```
+
+### Video Processing
+
+```python
+from scripts.video_processor import VideoProcessor
+
+processor = VideoProcessor(lpr_system)
+stats = processor.process_video_file('video.mp4', 'annotated_video.mp4')
 ```
 
 ## 📦 Required Packages

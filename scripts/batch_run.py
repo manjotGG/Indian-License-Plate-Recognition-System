@@ -11,8 +11,11 @@ from datetime import datetime
 import time
 import json
 
-from improved_lpr_system import ImprovedIndianLPRSystem
-from logger_util import setup_logger
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+from src.core.lpr_system import ImprovedIndianLPRSystem
+from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__, log_file="batch_processing.log")
 

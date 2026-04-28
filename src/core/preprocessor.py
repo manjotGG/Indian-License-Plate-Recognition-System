@@ -6,8 +6,8 @@ Optimized techniques to improve OCR accuracy
 import cv2
 import numpy as np
 from typing import Dict, Tuple, Optional
-from logger_util import setup_logger
-from config_manager import config
+from ..utils.logger import setup_logger
+from ..utils.config import config
 
 logger = setup_logger(__name__)
 

@@ -5,7 +5,7 @@ Handles OCR output cleaning, correction, and validation
 
 import re
 from typing import Tuple, Optional, Dict
-from logger_util import setup_logger
+from ..utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 

@@ -7,12 +7,15 @@ import os
 import json
 from dataclasses import dataclass
 from typing import Dict, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DetectionConfig:
     """Detection-related configuration"""
-    model_path: str = "yolov8n.pt"
+    model_path: str = "models/license_plate_yolov8.pt"
     confidence_threshold: float = 0.3
     iou_threshold: float = 0.4
     device: str = "cpu"  # "cpu" or "cuda"
@@ -131,9 +134,9 @@ class Config:
             with open(filename, 'r') as f:
                 config_dict = json.load(f)
                 self._update_from_dict(config_dict)
-            print(f"✅ Config loaded from {filename}")
+            logger.info(f"Config loaded from {filename}")
         except Exception as e:
-            print(f"⚠️ Failed to load config from {filename}: {e}")
+            logger.warning(f"Failed to load config from {filename}: {e}")
     
     def save_to_file(self, filename: str):
         """Save configuration to JSON file"""
@@ -148,9 +151,9 @@ class Config:
             
             with open(filename, 'w') as f:
                 json.dump(config_dict, f, indent=2)
-            print(f"✅ Config saved to {filename}")
+            logger.info(f"Config saved to {filename}")
         except Exception as e:
-            print(f"❌ Failed to save config: {e}")
+            logger.error(f"Failed to save config: {e}")
     
     def _dataclass_to_dict(self, obj) -> Dict:
         """Convert dataclass to dictionary"""

@@ -12,10 +12,11 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
-from config_manager import config
-from logger_util import setup_logger
-from plate_validator import IndianPlateValidator
-from plate_preprocessor import PlatePreprocessor
+from ..utils.config import config
+from ..utils.logger import setup_logger
+from .validator import IndianPlateValidator
+from .preprocessor import PlatePreprocessor
+from ..utils.database import ALPRDatabase
 
 logger = setup_logger(__name__, log_file="alpr.log")
 
@@ -36,6 +37,8 @@ class OCRResult:
     validated: bool
     state_code: Optional[str] = None
     registration_district: Optional[str] = None
+    series: Optional[str] = None
+    sequential_number: Optional[str] = None
 
 
 @dataclass
@@ -53,31 +56,37 @@ class ImprovedIndianLPRSystem:
     Modular architecture with proper error handling
     """
     
-    def __init__(self, device: str = 'cpu', use_gpu: bool = False):
+    def __init__(self, device: str = 'cpu', use_gpu: bool = False, enable_database: bool = False):
         """
         Initialize the LPR system
         
         Args:
             device: 'cpu' or 'cuda'
             use_gpu: Force GPU usage
+            enable_database: Enable database storage
         """
         self.device = self._setup_device(device, use_gpu)
         self.model = None
         self.reader = None
         self.validator = IndianPlateValidator()
         self.preprocessor = PlatePreprocessor()
+        self.database = ALPRDatabase() if enable_database else None
         
         logger.info(f"Initializing ALPR System on {self.device}")
         self._load_models()
     
     def _setup_device(self, device: str, use_gpu: bool) -> str:
         """Setup compute device"""
-        if use_gpu and torch.cuda.is_available():
-            device = 'cuda'
-            logger.info("✅ GPU available, using CUDA")
-        elif use_gpu:
-            logger.warning("⚠️ GPU requested but not available, falling back to CPU")
-            device = 'cpu'
+        if use_gpu:
+            if torch.cuda.is_available():
+                device = 'cuda'
+                logger.info("✅ GPU available, using CUDA")
+            elif torch.backends.mps.is_available():
+                device = 'mps'
+                logger.info("✅ Apple Silicon GPU available, using MPS")
+            else:
+                logger.warning("⚠️ GPU requested but not available, falling back to CPU")
+                device = 'cpu'
         else:
             device = 'cpu'
         
@@ -89,8 +98,26 @@ class ImprovedIndianLPRSystem:
         try:
             from ultralytics import YOLO
             model_path = config.detection.model_path
-            self.model = YOLO(model_path)
-            logger.info(f"✅ YOLO model loaded: {model_path}")
+            
+            # Try multiple possible paths for the model
+            possible_paths = [
+                model_path,
+                Path(__file__).parent.parent.parent / model_path,  # From src/core/ to project root
+                Path(__file__).parent.parent.parent / "models" / "license_plate_yolov8.pt",
+            ]
+            
+            loaded_model = None
+            for path in possible_paths:
+                if Path(path).exists():
+                    self.model = YOLO(str(path))
+                    logger.info(f"✅ YOLO model loaded: {path}")
+                    loaded_model = self.model
+                    break
+            
+            if loaded_model is None:
+                logger.warning(f"⚠️ Model file not found at any of: {possible_paths}")
+                logger.warning("⚠️ Will use fallback contour detection")
+                self.model = None
         except Exception as e:
             logger.error(f"❌ Failed to load YOLO model: {e}")
             logger.warning("⚠️ Will use fallback contour detection")
@@ -98,19 +125,20 @@ class ImprovedIndianLPRSystem:
         
         # Load EasyOCR
         try:
-            use_gpu = self.device == 'cuda'
+            # EasyOCR GPU support: only CUDA, not MPS
+            use_gpu_ocr = self.device == 'cuda'
             self.reader = easyocr.Reader(
                 config.ocr.languages,
-                gpu=use_gpu
+                gpu=use_gpu_ocr
             )
-            logger.info(f"✅ EasyOCR initialized (GPU: {use_gpu})")
+            logger.info(f"✅ EasyOCR initialized (GPU: {use_gpu_ocr})")
         except Exception as e:
             logger.error(f"❌ Failed to initialize EasyOCR: {e}")
             self.reader = None
     
     def process_image(self, image_path: str) -> Dict:
         """
-        Process a single image
+        Process a single image from disk
         
         Args:
             image_path: Path to image file
@@ -118,57 +146,72 @@ class ImprovedIndianLPRSystem:
         Returns:
             Dictionary with processing results
         """
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise FileNotFoundError(f"Could not read image: {image_path}")
+
+        return self.process_image_from_array(image, filename=str(image_path))
+
+    def process_image_from_array(self, image: np.ndarray, filename: str = "uploaded.jpg") -> Dict:
+        """
+        Process an image provided as a NumPy array
+        
+        Args:
+            image: BGR image array
+            filename: Original filename or identifier
+        
+        Returns:
+            Dictionary with processing results
+        """
         start_time = datetime.now()
         result = {
-            'image_path': str(image_path),
+            'image_path': filename,
             'status': 'success',
             'message': '',
             'plates': [],
             'processing_time': 0,
             'timestamp': datetime.now().isoformat(),
         }
-        
+
         try:
-            # Load image
-            image = cv2.imread(str(image_path))
-            if image is None:
-                raise FileNotFoundError(f"Could not read image: {image_path}")
+            if image is None or image.size == 0:
+                raise ValueError("Provided image array is empty or invalid")
+
+            logger.info(f"Processing image array: {filename}")
             
-            logger.info(f"Processing image: {image_path}")
-            
-            # Process
             plate_results = self.detect_and_recognize(image)
             
-            # Format results
             for plate in plate_results:
                 result['plates'].append({
-                    'text': plate.ocr_result.text,
+                    'plate_text': plate.ocr_result.text,
                     'confidence': plate.ocr_result.confidence,
-                    'validated': plate.ocr_result.validated,
+                    'state': plate.ocr_result.state_code or '',
+                    'district': plate.ocr_result.registration_district or '',
+                    'series': plate.ocr_result.series or '',
+                    'number': plate.ocr_result.sequential_number or '',
                     'bbox': plate.detection.bbox,
-                    'detection_confidence': plate.detection.confidence,
-                    'detection_method': plate.detection.method,
-                    'state_code': plate.ocr_result.state_code,
-                    'registration_district': plate.ocr_result.registration_district,
                 })
-            
+
             if not plate_results:
                 result['message'] = "No license plates detected"
                 logger.warning(result['message'])
             else:
                 result['message'] = f"Successfully detected {len(plate_results)} plate(s)"
                 logger.info(result['message'])
-        
+
         except Exception as e:
             result['status'] = 'error'
             result['message'] = str(e)
-            logger.error(f"Error processing image: {e}", exc_info=True)
-        
+            logger.error(f"Error processing image array: {e}", exc_info=True)
+
         finally:
             result['processing_time'] = (datetime.now() - start_time).total_seconds()
-        
+            
+            if self.database:
+                self.database.save_processing_session(result)
+
         return result
-    
+
     def detect_and_recognize(self, image: np.ndarray) -> List[PlateResult]:
         """
         Main pipeline: detect plates and recognize text
@@ -312,6 +355,8 @@ class ImprovedIndianLPRSystem:
                 validated=validation_result['is_valid'],
                 state_code=validation_result.get('state_code'),
                 registration_district=validation_result.get('registration_district'),
+                series=validation_result.get('series'),
+                sequential_number=validation_result.get('sequential_number'),
             )
             
             # Create plate result

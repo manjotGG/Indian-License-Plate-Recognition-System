@@ -14,7 +14,10 @@ import json
 from datetime import datetime
 
 # Import ALPR system
-from improved_lpr_system import ImprovedIndianLPRSystem
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+from src.core.lpr_system import ImprovedIndianLPRSystem
 
 # Page configuration
 st.set_page_config(
